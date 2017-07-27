@@ -2,11 +2,10 @@
 
 import sys
 import utils
-
-#from numpy import *
+import numpy as np
 
 class SWCell(object):
-	def __init__(self, row_idx, col_idx):
+	def __init__(self):
 		self.score_up = 0
 		self.score_left = 0
 		self.score_diag = 0
@@ -16,8 +15,8 @@ class SWCell(object):
 		self.source_row = 0 
 		self.source_col = 0
 		# initialize firrst column
-		if col_idx == 0:
-			self.source_row = row_idx-1 
+		#if col_idx == 0:
+		#	self.source_row = row_idx-1 
 
 
 class Reference(object):
@@ -65,15 +64,13 @@ def hash(db, query, kmer_len):
 	for i in xrange(0, len(ref2)-kmer_len):
 		kmer_dict.setdefault(ref2[i:i+kmer_len], []).append(i+len(ref1))
 	'''
-	print kmer_dict
-	for i in xrange(0, len(query)):
+	for i in xrange(0, len(query)-kmer_len):
 		kmer = query[i:i+kmer_len]
 		print i, kmer
 		if kmer in kmer_dict:
 			for j in sorted(kmer_dict[kmer]):
 				matched_kmers.append([i, j, 0])
 		
-	print "matched kmers:", matched_kmers
 	merged_kmers = []
 	for i, kmer in enumerate(matched_kmers):
 		if kmer[2]:
@@ -82,7 +79,6 @@ def hash(db, query, kmer_len):
 		segment_start_row =  matched_kmers[i][0]
 		segment_start_col =  matched_kmers[i][1]
 		segment_len = 1
-		print "matched i,", i, matched_kmers[i]
 		for j in xrange(i+1, len(matched_kmers)):
 			if matched_kmers[j][0] - matched_kmers[i][0] == matched_kmers[j][1] - matched_kmers[i][1] == segment_len:
 				print "    matched j,", j, matched_kmers[j]
@@ -92,11 +88,8 @@ def hash(db, query, kmer_len):
 				break
 		# dump merged kmer
 		merged_kmers.append([segment_start_row, segment_start_col, segment_len+kmer_len-1])
-		print "matched kmers:", matched_kmers
-	print "merged kmers:", merged_kmers	
 	selected_kmers = []
 	for kmer in sorted(merged_kmers, key=lambda x:x[2], reverse=True):
-		print kmer
 		overlap = False
 		for selected_kmer in selected_kmers:
 			if max(selected_kmer[0], kmer[0]) < min(selected_kmer[0]+selected_kmer[2], kmer[0]+kmer[2]) or max(selected_kmer[1], kmer[1]) < min(selected_kmer[1]+selected_kmer[2], kmer[1]+kmer[2]):
@@ -105,7 +98,6 @@ def hash(db, query, kmer_len):
 				break
 		if not overlap:
 			selected_kmers.append(kmer)
-	print "selected kmers:", selected_kmers
 	return selected_kmers
 
 
@@ -123,31 +115,31 @@ def cal_sw_score(sw_matrix, row_idx, col_idx, match, jump_end):
 	cell_diag = sw_matrix[row_idx-1][col_idx-1]
 	cell_left = sw_matrix[row_idx][col_idx-1]
 
-	cell.score_up = max(cell_up.score_diag + score_gap_open, cell_up.score_up + score_gap_ext)
-	cell.score_diag = cell_diag.score_max + score_match_mismatch
-	cell.score_left = max(cell_left.score_diag + score_gap_open, cell_left.score_left + score_gap_ext)
-
+	cell['score_up'] = max(cell_up['score_diag'] + score_gap_open, cell_up['score_up'] + score_gap_ext)
+	cell['score_diag'] = cell_diag['score_max'] + score_match_mismatch
+	cell['score_left'] = max(cell_left['score_diag'] + score_gap_open, cell_left['score_left'] + score_gap_ext)
+	
 	jump_idx = 0
 	if row_idx > 0 and jump_end > 0:
-		score_list = [sw_matrix[row_idx-1][j].score_diag for j in range(1, jump_end)]
-		cell.score_jump = max(score_list)
-		jump_idx = score_list.index(cell.score_jump)+1
-		cell.score_jump += score_match_mismatch + score_jump
-	score_list = [cell.score_diag, cell.score_jump, cell.score_up, cell.score_left]
-	cell.score_max = max(score_list)
-	max_idx = score_list.index(cell.score_max)
+		score_list = [sw_matrix[row_idx-1][j]['score_diag'] for j in range(1, jump_end)]
+		cell['score_jump'] = max(score_list)
+		jump_idx = score_list.index(cell['score_jump'])+1
+		cell['score_jump'] += score_match_mismatch + score_jump
+	score_list = [cell['score_diag'], cell['score_jump'], cell['score_up'], cell['score_left']]
+	cell['score_max'] = max(score_list)
+	max_idx = score_list.index(cell['score_max'])
 	if max_idx == 0: # max score from diag
-		cell.source_row = row_idx-1
-		cell.source_col = col_idx-1
+		cell['source_row'] = row_idx-1
+		cell['source_col'] = col_idx-1
 	elif max_idx == 1: # max score from jump
-		cell.source_row = row_idx-1 
-		cell.source_col = jump_idx
+		cell['source_row'] = row_idx-1 
+		cell['source_col'] = jump_idx
 	elif max_idx == 2: # max score from up
-		cell.source_row = row_idx-1
-		cell.source_col = col_idx
+		cell['source_row'] = row_idx-1
+		cell['source_col'] = col_idx
 	else: # max score from left
-		cell.source_row = row_idx
-		cell.source_col = col_idx-1
+		cell['source_row'] = row_idx
+		cell['source_col'] = col_idx-1
 
 	#print row_idx, col_idx, match, jump_end, cell.source_row, cell.source_col
 	#print cell.score_up, cell.score_diag, cell.score_left, cell.score_jump, cell.score_max
@@ -163,7 +155,7 @@ def fill_sw_matrix(sw_matrix, db, query, row_start, row_end, col_start, col_end,
 			if j >= matrix1_width:
 				jump_end = matrix1_width
 			else:
-				jump_end = 0			
+				jump_end = 0
 			score = cal_sw_score(sw_matrix, i, j, match, jump_end)
 	
 
@@ -172,16 +164,23 @@ def sw_split(ref_seq1, ref_seq2, read_seq):
 	# add 1 "N"	to represent idx 0
 	db = "N" + ref_seq1 + ref_seq2
 	query = "N" + read_seq
-	
 	matrix1_width = len(ref_seq1) + 1
 	n_rows = len(query)
 	n_cols = len(db)
+	swcell = np.dtype({'names':['score_up', 'score_left', 'score_diag', 'score_jump', 'score_max', 'source_row', 'source_col'], 'formats':['i', 'i', 'i', 'i', 'i', 'i', 'i']}, align = True)
+	
+	sw_matrix = np.zeros(shape=(n_rows, n_cols), dtype=swcell)
+	#sw_matrix = [[SWCell() for col in range(n_cols)] for row in range(n_rows)]
+	#sw_matrix = [[SWCell() for col in range(n_cols)] for row in range(n_rows)]
+	#sw_matrix = np.array([[SWCell() for col in range(n_cols)] for row in range(n_rows)], dtype=object)
+	#sw_matrix = np.full((n_rows, n_cols), SWCell())
+	#sw_matrix = np.ndarray(shape=(n_rows, n_cols), dtype=SWCell())
+	#print "nrow, ncol, mwidth:", n_rows, n_cols, matrix1_width, sw_matrix.shape
 
-	print "nrow, ncol, mwidth:", n_rows, n_cols, matrix1_width
-
-	sw_matrix = [[SWCell(row, col) for col in range(n_cols)] for row in range(n_rows)]
-	kmer_list = hash(db, query, 3)
-	#kmer_list = []
+	for i in xrange(1, n_rows):
+		sw_matrix[i][0]['source_row'] = i-1
+	kmer_list = []
+	kmer_list = hash(db, query, 17)
 	row_start = 1
 	col_start = 1
 	row_end = 1
@@ -225,7 +224,7 @@ def sw_split(ref_seq1, ref_seq2, read_seq):
 
 def backtrace(sw_matrix):
 	row_idx = len(sw_matrix)-1
-	last_row_scores = [sw_matrix[row_idx][j].score_max for j in xrange(0, len(sw_matrix[0]))]
+	last_row_scores = [sw_matrix[row_idx][j]['score_max'] for j in xrange(0, len(sw_matrix[0]))]
 	max_score = max(last_row_scores)
 	col_idx = last_row_scores.index(max_score)
 	print "max score cell:", row_idx, col_idx, max_score
@@ -237,11 +236,11 @@ def backtrace(sw_matrix):
 	while row_idx > 0:
 		is_jump = False
 		cell = sw_matrix[row_idx][col_idx]
-		if row_idx == cell.source_row + 1 and col_idx == cell.source_col + 1: # match/mismatch
+		if row_idx == cell['source_row'] + 1 and col_idx == cell['source_col'] + 1: # match/mismatch
 			cur_code = "M"
-		elif row_idx == cell.source_row and col_idx == cell.source_col + 1: # deletion
+		elif row_idx == cell['source_row'] and col_idx == cell['source_col'] + 1: # deletion
 			cur_code = "D"
-		elif row_idx == cell.source_row + 1 and col_idx == cell.source_col: # insertion
+		elif row_idx == cell['source_row'] + 1 and col_idx == cell['source_col']: # insertion
 			cur_code = "I"
 		else: # jump
 			cur_code = "M"
@@ -257,19 +256,19 @@ def backtrace(sw_matrix):
 		if is_jump:
 			code_list.append(str(code_len)+cur_code)
 			cur_code = "N"
-			code_len = col_idx - cell.source_col - 1
+			code_len = col_idx - cell['source_col'] - 1
 			#code_list.append(str(code_len)+cur_code)
 		last_code = cur_code
 		
-		print (row_idx, col_idx), cell.score_max
+		print (row_idx, col_idx), cell['score_max']
 
-		row_idx = cell.source_row
-		col_idx = cell.source_col
+		row_idx = cell['source_row']
+		col_idx = cell['source_col']
 	if cur_code != "M":
 		message("ERROR: alignment starts with indels.", exit=0)
 	code_list.append(str(code_len)+cur_code)
 	print code_list
-	print "".join(code_list[::-1])
+	print "CIGAR:","".join(code_list[::-1])
 
 if __name__ == '__main__':
 	#ref_file = sys.argv[1]
@@ -281,6 +280,9 @@ if __name__ == '__main__':
 	ref1 = "BACCABBBBB"
 	ref2 = "BBBDACDFFCAB"
 	read = "ACCADACDEEFFCA"
+	#ref1 = "BACB"
+	#ref2 = "BFFB"
+	#read = "ACFF"
 	print ref1, ref2
 	print read
 	#hash("N"+ref1+ref2, "N"+read, 3)

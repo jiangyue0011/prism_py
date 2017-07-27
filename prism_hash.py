@@ -65,15 +65,13 @@ def hash(db, query, kmer_len):
 	for i in xrange(0, len(ref2)-kmer_len):
 		kmer_dict.setdefault(ref2[i:i+kmer_len], []).append(i+len(ref1))
 	'''
-	print kmer_dict
-	for i in xrange(0, len(query)):
+	for i in xrange(0, len(query)-kmer_len):
 		kmer = query[i:i+kmer_len]
 		print i, kmer
 		if kmer in kmer_dict:
 			for j in sorted(kmer_dict[kmer]):
 				matched_kmers.append([i, j, 0])
 		
-	print "matched kmers:", matched_kmers
 	merged_kmers = []
 	for i, kmer in enumerate(matched_kmers):
 		if kmer[2]:
@@ -82,7 +80,6 @@ def hash(db, query, kmer_len):
 		segment_start_row =  matched_kmers[i][0]
 		segment_start_col =  matched_kmers[i][1]
 		segment_len = 1
-		print "matched i,", i, matched_kmers[i]
 		for j in xrange(i+1, len(matched_kmers)):
 			if matched_kmers[j][0] - matched_kmers[i][0] == matched_kmers[j][1] - matched_kmers[i][1] == segment_len:
 				print "    matched j,", j, matched_kmers[j]
@@ -92,11 +89,8 @@ def hash(db, query, kmer_len):
 				break
 		# dump merged kmer
 		merged_kmers.append([segment_start_row, segment_start_col, segment_len+kmer_len-1])
-		print "matched kmers:", matched_kmers
-	print "merged kmers:", merged_kmers	
 	selected_kmers = []
 	for kmer in sorted(merged_kmers, key=lambda x:x[2], reverse=True):
-		print kmer
 		overlap = False
 		for selected_kmer in selected_kmers:
 			if max(selected_kmer[0], kmer[0]) < min(selected_kmer[0]+selected_kmer[2], kmer[0]+kmer[2]) or max(selected_kmer[1], kmer[1]) < min(selected_kmer[1]+selected_kmer[2], kmer[1]+kmer[2]):
@@ -105,7 +99,6 @@ def hash(db, query, kmer_len):
 				break
 		if not overlap:
 			selected_kmers.append(kmer)
-	print "selected kmers:", selected_kmers
 	return selected_kmers
 
 
@@ -165,9 +158,13 @@ def fill_sw_matrix(sw_matrix, db, query, row_start, row_end, col_start, col_end,
 			else:
 				jump_end = 0			
 			score = cal_sw_score(sw_matrix, i, j, match, jump_end)
+
+
+def sw_split(split_ref, read_seq):
+	return sw_split_core(split_ref.seq1, split_ref.seq2, read_seq)
 	
 
-def sw_split(ref_seq1, ref_seq2, read_seq):
+def sw_split_core(ref_seq1, ref_seq2, read_seq):
 
 	# add 1 "N"	to represent idx 0
 	db = "N" + ref_seq1 + ref_seq2
@@ -180,8 +177,8 @@ def sw_split(ref_seq1, ref_seq2, read_seq):
 	print "nrow, ncol, mwidth:", n_rows, n_cols, matrix1_width
 
 	sw_matrix = [[SWCell(row, col) for col in range(n_cols)] for row in range(n_rows)]
-	kmer_list = hash(db, query, 3)
 	#kmer_list = []
+	kmer_list = hash(db, query, 17)
 	row_start = 1
 	col_start = 1
 	row_end = 1
@@ -269,7 +266,7 @@ def backtrace(sw_matrix):
 		message("ERROR: alignment starts with indels.", exit=0)
 	code_list.append(str(code_len)+cur_code)
 	print code_list
-	print "".join(code_list[::-1])
+	print "CIGAR:","".join(code_list[::-1])
 
 if __name__ == '__main__':
 	#ref_file = sys.argv[1]
@@ -284,6 +281,6 @@ if __name__ == '__main__':
 	print ref1, ref2
 	print read
 	#hash("N"+ref1+ref2, "N"+read, 3)
-	sw_split(ref1, ref2, read)
+	sw_split_core(ref1, ref2, read)
 
 	#sw_split("BACBBBBB","BBBDDFFB","ACDDEEFF")
