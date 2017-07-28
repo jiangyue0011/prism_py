@@ -3,7 +3,7 @@
 import sys
 import pysam
 import prism_hash2 as prism
-import core
+import common
 
 class Cluster(object):
 	def __init__(self, line):
@@ -12,27 +12,35 @@ class Cluster(object):
 		self.pos1 = int(tmp[1])
 		self.chr2 = tmp[2]
 		self.pos2 = int(tmp[3])
-		self.type = tmp[4]
+		self.sv_type = tmp[4]
 
 
 class SplitReference(object):
 	ext_len_up = 100
 	ext_len_down = 500
-	def __init__(self, cluster):
+	matrix_len = ext_len_up + ext_len_down
+	def __init__(self, cluster, refs):
+		self.sv_type = cluster.sv_type
 		self.chr1 = cluster.chr1
 		self.chr2 = cluster.chr2
-		if cluster.type == "DEL":
+		if cluster.sv_type == "DEL":
 			self.start1 = cluster.pos1 - self.ext_len_up
 			self.end1 = cluster.pos1 + self.ext_len_down
 			self.start2 = cluster.pos2 - self.ext_len_down
 			self.end2 = cluster.pos2 + self.ext_len_up
-			self.overlap = self.start2 - self.end1
-			self.seq1 = ""
-			self.seq2 = ""
+			self.overlap_len = self.start2 - self.end1
+		elif cluster.sv_type == "DUP":
+			self.start1 = cluster.pos2 - self.ext_len_up
+			self.end1 = cluster.pos2 + self.ext_len_down
+			self.start2 = cluster.pos1 - self.ext_len_down
+			self.end2 = cluster.pos1 + self.ext_len_up
+			self.overlap_len = self.start1 - self.end2
 		else:
 			#TODO other types of SVs
 			pass
-		self.kmer_dict = core.build_hashtable("N"+self.seq1+self.seq2, 17)
+		self.seq1 = refs.fetch(self.chr1, self.start1, self.end1).upper()
+		self.seq2 = refs.fetch(self.chr2, self.start2, self.end2).upper()
+		self.kmer_dict = common.build_hashtable("N"+self.seq1+self.seq2, 17)
 		self.kmer_dict = []
 
 
@@ -45,19 +53,16 @@ bam = pysam.AlignmentFile(bam_file, 'rb')
 clusters = []
 for line in open(cluster_file, 'r'):
 	cluster = Cluster(line)
-	if cluster.type != "DEL":
+	if cluster.sv_type != "DUP":
 		continue
-	print "cluster:", cluster.chr1, cluster.pos1, cluster.chr2, cluster.pos2, cluster.type
-	split_ref = SplitReference(cluster)
+	print "cluster:", cluster.chr1, cluster.pos1, cluster.chr2, cluster.pos2, cluster.sv_type
+	split_ref = SplitReference(cluster, refs)
 	print "start,end:", split_ref.start1, split_ref.end1, split_ref.start2, split_ref.end2
-	split_ref.seq1 = refs.fetch(split_ref.chr1, split_ref.start1, split_ref.end1).upper()
-	split_ref.seq2 = refs.fetch(split_ref.chr2, split_ref.start2, split_ref.end2).upper()
-	#print split_ref.seq1
-	#print split_ref.seq2
-	
-	#if cluster.type == "DEL":
-	#	ref1 = refs.fetch(cluster.chr1, cluster.pos1-100, cluster.pos1+500)
-	#	ref2 = refs.fetch(cluster.chr2, cluster.pos2-500, cluster.pos2+100)
+	print split_ref.seq1
+	print split_ref.seq2
+
+	#split_ref.seq1 = refs.fetch(split_ref.chr1, split_ref.start1, split_ref.end1).upper()
+	#split_ref.seq2 = refs.fetch(split_ref.chr2, split_ref.start2, split_ref.end2).upper()
 	read_list = []
 	for read in bam.fetch(cluster.chr1, cluster.pos1-100, cluster.pos1+500):
 		if read.cigarstring != str(read.query_length)+"M":
@@ -68,8 +73,8 @@ for line in open(cluster_file, 'r'):
 	print "#reads:", len(read_list)
 	n = 0
 	for read in read_list:
-		if read.query_name != "donor_4405_4935_2:0:0_1:0:0_697b":
-			continue
+		#if read.query_name != "donor_5578_6037_2:0:0_0:0:0_1e38":
+		#	continue
 		n += 1
 		if n % 100 == 0:
 			print >> sys.stderr, n
@@ -77,5 +82,10 @@ for line in open(cluster_file, 'r'):
 		print "-------------------------------------------------------"
 		print read.tostring(bam)
 		split_aln = prism.sw_split(split_ref, read.query_sequence)
-	#sys.exit(1)
+		read.cigarstring = split_aln.cigar_string
+		read.reference_start = split_aln.mapping_pos-1 # pysam use 0-based coordinate
+		read.set_tags([])
+		print read.tostring(bam)
+		#common.print_sam(split_aln, read)
+	sys.exit(1)
 	
